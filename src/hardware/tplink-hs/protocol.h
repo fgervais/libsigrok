@@ -17,15 +17,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef LIBSIGROK_HARDWARE_RDTECH_TC_PROTOCOL_H
-#define LIBSIGROK_HARDWARE_RDTECH_TC_PROTOCOL_H
+#ifndef LIBSIGROK_HARDWARE_TPLINK_HS_PROTOCOL_H
+#define LIBSIGROK_HARDWARE_TPLINK_HS_PROTOCOL_H
 
 #include <libsigrok/libsigrok.h>
 #include "libsigrok-internal.h"
 
-#define LOG_PREFIX "rdtech-tc"
+#define LOG_PREFIX "tplink-hs"
 
-#define RDTECH_TC_BUFSIZE 256
+#define TPLINK_HS_BUFSIZE 256
 
 struct rdtech_dev_info {
 	char *model_name;
@@ -38,13 +38,13 @@ struct dev_context {
 	const struct binary_analog_channel *channels;
 	struct sr_sw_limits limits;
 
-	uint8_t buf[RDTECH_TC_BUFSIZE];
+	uint8_t buf[TPLINK_HS_BUFSIZE];
 	int buflen;
 	int64_t cmd_sent_at;
 };
 
-SR_PRIV int rdtech_tc_probe(struct sr_serial_dev_inst *serial, struct dev_context  *devc);
-SR_PRIV int rdtech_tc_receive_data(int fd, int revents, void *cb_data);
-SR_PRIV int rdtech_tc_poll(const struct sr_dev_inst *sdi);
+SR_PRIV int tplink_hs_probe(struct sr_serial_dev_inst *serial, struct dev_context  *devc);
+SR_PRIV int tplink_hs_receive_data(int fd, int revents, void *cb_data);
+SR_PRIV int tplink_hs_poll(const struct sr_dev_inst *sdi);
 
 #endif

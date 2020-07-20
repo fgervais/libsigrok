@@ -64,7 +64,7 @@ static const uint8_t AES_KEY[] = {
 	0xa7, 0xf1, 0x06, 0x61, 0x9a, 0xb8, 0x72, 0x88,
 };
 
-static const struct binary_analog_channel rdtech_tc_channels[] = {
+static const struct binary_analog_channel tplink_hs_channels[] = {
 	{ "V",  {   0 + 48, BVT_LE_UINT32, 1e-4, }, 4, SR_MQ_VOLTAGE, SR_UNIT_VOLT },
 	{ "I",  {   0 + 52, BVT_LE_UINT32, 1e-5, }, 5, SR_MQ_CURRENT, SR_UNIT_AMPERE },
 	{ "D+", {  64 + 32, BVT_LE_UINT32, 1e-2, }, 2, SR_MQ_VOLTAGE, SR_UNIT_VOLT },
@@ -115,7 +115,7 @@ static int process_poll_pkt(struct dev_context  *devc, uint8_t *dst)
 	return SR_OK;
 }
 
-SR_PRIV int rdtech_tc_probe(struct sr_serial_dev_inst *serial, struct dev_context  *devc)
+SR_PRIV int tplink_hs_probe(struct sr_serial_dev_inst *serial, struct dev_context  *devc)
 {
 	int len;
 	uint8_t poll_pkt[TC_POLL_LEN];
@@ -137,7 +137,7 @@ SR_PRIV int rdtech_tc_probe(struct sr_serial_dev_inst *serial, struct dev_contex
 		return SR_ERR;
 	}
 
-	devc->channels = rdtech_tc_channels;
+	devc->channels = tplink_hs_channels;
 	devc->dev_info.model_name = g_strndup((const char *)poll_pkt + OFF_MODEL, LEN_MODEL);
 	devc->dev_info.fw_ver = g_strndup((const char *)poll_pkt + OFF_FW_VER, LEN_FW_VER);
 	devc->dev_info.serial_num = RL32(poll_pkt + OFF_SERIAL);
@@ -145,7 +145,7 @@ SR_PRIV int rdtech_tc_probe(struct sr_serial_dev_inst *serial, struct dev_contex
 	return SR_OK;
 }
 
-SR_PRIV int rdtech_tc_poll(const struct sr_dev_inst *sdi)
+SR_PRIV int tplink_hs_poll(const struct sr_dev_inst *sdi)
 {
 	struct dev_context *devc = sdi->priv;
 	struct sr_serial_dev_inst *serial = sdi->conn;
@@ -207,7 +207,7 @@ static void recv_poll_data(struct sr_dev_inst *sdi, struct sr_serial_dev_inst *s
 	devc->buflen = 0;
 }
 
-SR_PRIV int rdtech_tc_receive_data(int fd, int revents, void *cb_data)
+SR_PRIV int tplink_hs_receive_data(int fd, int revents, void *cb_data)
 {
 	struct sr_dev_inst *sdi;
 	struct dev_context *devc;
@@ -235,7 +235,7 @@ SR_PRIV int rdtech_tc_receive_data(int fd, int revents, void *cb_data)
 	elapsed = now - devc->cmd_sent_at;
 
 	if (elapsed > TC_POLL_PERIOD_MS)
-		rdtech_tc_poll(sdi);
+		tplink_hs_poll(sdi);
 
 	return TRUE;
 }

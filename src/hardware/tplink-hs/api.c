@@ -27,7 +27,7 @@
 #include "libsigrok-internal.h"
 #include "protocol.h"
 
-#define RDTECH_TC_SERIALCOMM "115200/8n1"
+#define TPLINK_HS_SERIALCOMM "115200/8n1"
 
 static const uint32_t scanopts[] = {
 	SR_CONF_CONN,
@@ -44,7 +44,7 @@ static const uint32_t devopts[] = {
 	SR_CONF_LIMIT_MSEC | SR_CONF_SET,
 };
 
-static GSList *rdtech_tc_scan(struct sr_dev_driver *di, const char *conn,
+static GSList *tplink_hs_scan(struct sr_dev_driver *di, const char *conn,
 			      const char *serialcomm)
 {
 	struct sr_serial_dev_inst *serial;
@@ -59,7 +59,7 @@ static GSList *rdtech_tc_scan(struct sr_dev_driver *di, const char *conn,
 	devc = g_malloc0(sizeof(struct dev_context));
 	sr_sw_limits_init(&devc->limits);
 
-	if (rdtech_tc_probe(serial, devc) != SR_OK) {
+	if (tplink_hs_probe(serial, devc) != SR_OK) {
 		sr_err("Failed to find a supported RDTech TC device.");
 		goto err_out_serial;
 	}
@@ -97,7 +97,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
 	struct sr_config *src;
 	const char *conn = NULL;
-	const char *serialcomm = RDTECH_TC_SERIALCOMM;
+	const char *serialcomm = TPLINK_HS_SERIALCOMM;
 
 	for (GSList *l = options; l; l = l->next) {
 		src = l->data;
@@ -113,7 +113,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	if (!conn)
 		return NULL;
 
-	return rdtech_tc_scan(di, conn, serialcomm);
+	return tplink_hs_scan(di, conn, serialcomm);
 }
 
 static int config_set(uint32_t key, GVariant *data,
@@ -143,14 +143,14 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 	std_session_send_df_header(sdi);
 
 	serial_source_add(sdi->session, serial, G_IO_IN, 50,
-			  rdtech_tc_receive_data, (void *)sdi);
+			  tplink_hs_receive_data, (void *)sdi);
 
-	return rdtech_tc_poll(sdi);
+	return tplink_hs_poll(sdi);
 }
 
-static struct sr_dev_driver rdtech_tc_driver_info = {
-	.name = "rdtech-tc",
-	.longname = "RDTech TC66C USB power meter",
+static struct sr_dev_driver tplink_hs_driver_info = {
+	.name = "tplink-hs",
+	.longname = "TP-Link HS110 Wi-Fi Smart Plug with Energy Monitoring",
 	.api_version = 1,
 	.init = std_init,
 	.cleanup = std_cleanup,
@@ -166,4 +166,4 @@ static struct sr_dev_driver rdtech_tc_driver_info = {
 	.dev_acquisition_stop = std_serial_dev_acquisition_stop,
 	.context = NULL,
 };
-SR_REGISTER_DEV_DRIVER(rdtech_tc_driver_info);
+SR_REGISTER_DEV_DRIVER(tplink_hs_driver_info);
