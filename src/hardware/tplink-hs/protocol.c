@@ -18,13 +18,27 @@
  */
 
 #include <config.h>
+#ifdef _WIN32
+#define _WIN32_WINNT 0x0501
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+#include <glib.h>
+#include <string.h>
+#include <unistd.h>
+#ifndef _WIN32
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#endif
+#include <errno.h>
 #include <stdlib.h>
 #include <math.h>
-#include <string.h>
-#include <glib.h>
 #include <nettle/aes.h>
-#include <libsigrok/libsigrok.h>
-#include "libsigrok-internal.h"
+// #include <libsigrok/libsigrok.h>
+// #include "libsigrok-internal.h"
+
 #include "protocol.h"
 
 #define SERIAL_WRITE_TIMEOUT_MS 1
@@ -115,34 +129,216 @@ static int process_poll_pkt(struct dev_context  *devc, uint8_t *dst)
 	return SR_OK;
 }
 
-SR_PRIV int tplink_hs_probe(struct sr_serial_dev_inst *serial, struct dev_context  *devc)
+static int plink_hs_tcp_open(struct dev_context *devc)
+{
+	struct addrinfo hints;
+	struct addrinfo *results, *res;
+	int err;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+
+	err = getaddrinfo(devc->address, devc->port, &hints, &results);
+
+	if (err) {
+		sr_err("Address lookup failed: %s:%s: %s", devc->address,
+			devc->port, gai_strerror(err));
+		return SR_ERR;
+	}
+
+	for (res = results; res; res = res->ai_next) {
+		if ((devc->socket = socket(res->ai_family, res->ai_socktype,
+						res->ai_protocol)) < 0)
+			continue;
+		if (connect(devc->socket, res->ai_addr, res->ai_addrlen) != 0) {
+			close(devc->socket);
+			devc->socket = -1;
+			continue;
+		}
+		break;
+	}
+
+	freeaddrinfo(results);
+
+	if (devc->socket < 0) {
+		sr_err("Failed to connect to %s:%s: %s", devc->address,
+			devc->port, g_strerror(errno));
+		return SR_ERR;
+	}
+
+	return SR_OK;
+}
+
+static int tplink_hs_tcp_close(struct dev_context *devc)
+{
+	if (close(devc->socket) < 0)
+		return SR_ERR;
+
+	return SR_OK;
+}
+
+static int tplink_hs_tcp_send_cmd(struct dev_context *devc,
+				    const char *format, ...)
+{
+	int len, out;
+	va_list args, args_copy;
+	char *buf;
+
+	va_start(args, format);
+	va_copy(args_copy, args);
+	len = vsnprintf(NULL, 0, format, args_copy);
+	va_end(args_copy);
+
+	buf = g_malloc0(len + 2);
+	vsprintf(buf, format, args);
+	va_end(args);
+
+	if (buf[len - 1] != '\n')
+		buf[len] = '\n';
+
+	out = send(devc->socket, buf, strlen(buf), 0);
+
+	if (out < 0) {
+		sr_err("Send error: %s", g_strerror(errno));
+		g_free(buf);
+		return SR_ERR;
+	}
+
+	if (out < (int)strlen(buf)) {
+		sr_dbg("Only sent %d/%zu bytes of command: '%s'.", out,
+		       strlen(buf), buf);
+	}
+
+	sr_spew("Sent command: '%s'.", buf);
+
+	g_free(buf);
+
+	return SR_OK;
+}
+
+static int tplink_hs_tcp_read_data(struct dev_context *devc, char *buf,
+				     int maxlen)
+{
+	int len;
+
+	len = recv(devc->socket, buf, maxlen, 0);
+
+	if (len < 0) {
+		sr_err("Receive error: %s", g_strerror(errno));
+		return SR_ERR;
+	}
+
+	return len;
+}
+
+static int tplink_hs_tcp_get_string(struct dev_context *devc, const char *cmd,
+				      char **tcp_resp)
+{
+	GString *response = g_string_sized_new(1024);
+	int len;
+	gint64 timeout;
+
+	*tcp_resp = NULL;
+	if (cmd) {
+		if (tplink_hs_tcp_send_cmd(devc, cmd) != SR_OK)
+			return SR_ERR;
+	}
+
+	timeout = g_get_monotonic_time() + devc->read_timeout;
+	len = tplink_hs_tcp_read_data(devc, response->str,
+					response->allocated_len);
+
+	if (len < 0) {
+		g_string_free(response, TRUE);
+		return SR_ERR;
+	}
+
+	if (len > 0)
+		g_string_set_size(response, len);
+
+	if (g_get_monotonic_time() > timeout) {
+		sr_err("Timed out waiting for response.");
+		g_string_free(response, TRUE);
+		return SR_ERR_TIMEOUT;
+	}
+
+	/* Remove trailing newline if present */
+	if (response->len >= 1 && response->str[response->len - 1] == '\n')
+		g_string_truncate(response, response->len - 1);
+
+	/* Remove trailing carriage return if present */
+	if (response->len >= 1 && response->str[response->len - 1] == '\r')
+		g_string_truncate(response, response->len - 1);
+
+	sr_spew("Got response: '%.70s', length %" G_GSIZE_FORMAT ".",
+		response->str, response->len);
+
+	*tcp_resp = g_string_free(response, FALSE);
+
+	return SR_OK;
+}
+
+static int tplink_hs_tcp_detect(struct dev_context *devc)
+{
+	char *resp = NULL;
+	int ret;
+
+	ret = tplink_hs_tcp_get_string(devc, "{\"system\":{\"get_sysinfo\":{}}}", &resp);
+	printf(resp);
+
+
+	if (ret == SR_OK && !g_ascii_strncasecmp(resp, "BeagleLogic", 11))
+		ret = SR_OK;
+	else
+		ret = SR_ERR;
+
+	g_free(resp);
+
+	return ret;
+}
+
+SR_PRIV int tplink_hs_probe(struct dev_context  *devc)
 {
 	int len;
 	uint8_t poll_pkt[TC_POLL_LEN];
 
-	if (serial_write_blocking(serial, &POLL_CMD, sizeof(POLL_CMD) - 1,
-                                  SERIAL_WRITE_TIMEOUT_MS) < 0) {
-		sr_err("Unable to send probe request.");
+	if (tplink_hs_tcp_open(devc) != SR_OK)
 		return SR_ERR;
-	}
-
-	len = serial_read_blocking(serial, devc->buf, TC_POLL_LEN, TC_TIMEOUT_MS);
-	if (len != TC_POLL_LEN) {
-		sr_err("Failed to read probe response.");
+	if (tplink_hs_tcp_detect(devc) != SR_OK)
 		return SR_ERR;
-	}
-
-	if (process_poll_pkt(devc, poll_pkt) != SR_OK) {
-		sr_err("Unrecognized TC device!");
+	if (tplink_hs_tcp_close(devc) != SR_OK)
 		return SR_ERR;
-	}
-
-	devc->channels = tplink_hs_channels;
-	devc->dev_info.model_name = g_strndup((const char *)poll_pkt + OFF_MODEL, LEN_MODEL);
-	devc->dev_info.fw_ver = g_strndup((const char *)poll_pkt + OFF_FW_VER, LEN_FW_VER);
-	devc->dev_info.serial_num = RL32(poll_pkt + OFF_SERIAL);
+	sr_info("BeagleLogic device found at %s : %s",
+		devc->address, devc->port);
 
 	return SR_OK;
+
+
+	// if (serial_write_blocking(serial, &POLL_CMD, sizeof(POLL_CMD) - 1,
+ //                                  SERIAL_WRITE_TIMEOUT_MS) < 0) {
+	// 	sr_err("Unable to send probe request.");
+	// 	return SR_ERR;
+	// }
+
+	// len = serial_read_blocking(serial, devc->buf, TC_POLL_LEN, TC_TIMEOUT_MS);
+	// if (len != TC_POLL_LEN) {
+	// 	sr_err("Failed to read probe response.");
+	// 	return SR_ERR;
+	// }
+
+	// if (process_poll_pkt(devc, poll_pkt) != SR_OK) {
+	// 	sr_err("Unrecognized TC device!");
+	// 	return SR_ERR;
+	// }
+
+	// devc->channels = tplink_hs_channels;
+	// devc->dev_info.model_name = g_strndup((const char *)poll_pkt + OFF_MODEL, LEN_MODEL);
+	// devc->dev_info.fw_ver = g_strndup((const char *)poll_pkt + OFF_FW_VER, LEN_FW_VER);
+	// devc->dev_info.serial_num = RL32(poll_pkt + OFF_SERIAL);
+
+	// return SR_OK;
 }
 
 SR_PRIV int tplink_hs_poll(const struct sr_dev_inst *sdi)

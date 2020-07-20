@@ -27,23 +27,29 @@
 
 #define TPLINK_HS_BUFSIZE 256
 
-struct rdtech_dev_info {
-	char *model_name;
-	char *fw_ver;
-	uint32_t serial_num;
+struct tplink_dev_info {
+	char *model;
+	char *sw_ver;
+	char *deviceID;
 };
 
 struct dev_context {
-	struct rdtech_dev_info dev_info;
+	struct tplink_dev_info dev_info;
 	const struct binary_analog_channel *channels;
 	struct sr_sw_limits limits;
 
 	uint8_t buf[TPLINK_HS_BUFSIZE];
 	int buflen;
 	int64_t cmd_sent_at;
+
+	char *address;
+	char *port;
+	int socket;
+	unsigned int read_timeout;
+	unsigned char *tcp_buffer;
 };
 
-SR_PRIV int tplink_hs_probe(struct sr_serial_dev_inst *serial, struct dev_context  *devc);
+SR_PRIV int tplink_hs_probe(struct dev_context  *devc);
 SR_PRIV int tplink_hs_receive_data(int fd, int revents, void *cb_data);
 SR_PRIV int tplink_hs_poll(const struct sr_dev_inst *sdi);
 

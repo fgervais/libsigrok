@@ -27,11 +27,8 @@
 #include "libsigrok-internal.h"
 #include "protocol.h"
 
-#define TPLINK_HS_SERIALCOMM "115200/8n1"
-
 static const uint32_t scanopts[] = {
 	SR_CONF_CONN,
-	SR_CONF_SERIALCOMM,
 };
 
 static const uint32_t drvopts[] = {
@@ -44,22 +41,39 @@ static const uint32_t devopts[] = {
 	SR_CONF_LIMIT_MSEC | SR_CONF_SET,
 };
 
-static GSList *tplink_hs_scan(struct sr_dev_driver *di, const char *conn,
-			      const char *serialcomm)
+static GSList *tplink_hs_scan(struct sr_dev_driver *di, const char *conn)
 {
-	struct sr_serial_dev_inst *serial;
+	// struct sr_serial_dev_inst *serial;
 	GSList *devices = NULL;
 	struct dev_context *devc = NULL;
 	struct sr_dev_inst *sdi = NULL;
+	gchar **params;
 
-	serial = sr_serial_dev_inst_new(conn, serialcomm);
-	if (serial_open(serial, SERIAL_RDWR) != SR_OK)
-		goto err_out;
+	// serial = sr_serial_dev_inst_new(conn, serialcomm);
+	// if (serial_open(serial, SERIAL_RDWR) != SR_OK)
+	// 	goto err_out;
+
+	params = g_strsplit(conn, "/", 0);
+	if (!params || !params[1] || !params[2]) {
+		sr_err("Invalid Parameters.");
+		g_strfreev(params);
+		return NULL;
+	}
+	if (g_ascii_strncasecmp(params[0], "tcp", 3)) {
+		sr_err("Only TCP (tcp-raw) protocol is currently supported.");
+		g_strfreev(params);
+		return NULL;
+	}
 
 	devc = g_malloc0(sizeof(struct dev_context));
 	sr_sw_limits_init(&devc->limits);
+	devc->tcp_buffer = 0;
+	devc->read_timeout = 1000 * 1000;
+	devc->address = g_strdup(params[1]);
+	devc->port = g_strdup(params[2]);
+	g_strfreev(params);
 
-	if (tplink_hs_probe(serial, devc) != SR_OK) {
+	if (tplink_hs_probe(devc) != SR_OK) {
 		sr_err("Failed to find a supported RDTech TC device.");
 		goto err_out_serial;
 	}
@@ -67,28 +81,28 @@ static GSList *tplink_hs_scan(struct sr_dev_driver *di, const char *conn,
 	sdi = g_malloc0(sizeof(struct sr_dev_inst));
 	sdi->status = SR_ST_INACTIVE;
 	sdi->vendor = g_strdup("RDTech");
-	sdi->model = g_strdup(devc->dev_info.model_name);
-	sdi->version = g_strdup(devc->dev_info.fw_ver);
-	sdi->serial_num = g_strdup_printf("%08" PRIu32, devc->dev_info.serial_num);
+	sdi->model = g_strdup(devc->dev_info.model);
+	sdi->version = g_strdup(devc->dev_info.sw_ver);
+	sdi->serial_num = devc->dev_info.deviceID;
 	sdi->inst_type = SR_INST_SERIAL;
-	sdi->conn = serial;
+	// sdi->conn = serial;
 	sdi->priv = devc;
 
 	for (int i = 0; devc->channels[i].name; i++)
 		sr_channel_new(sdi, i, SR_CHANNEL_ANALOG, TRUE, devc->channels[i].name);
 
 	devices = g_slist_append(devices, sdi);
-	serial_close(serial);
-	if (!devices)
-		sr_serial_dev_inst_free(serial);
+	// serial_close(serial);
+	// if (!devices)
+	// 	sr_serial_dev_inst_free(serial);
 
 	return std_scan_complete(di, devices);
 
 err_out_serial:
 	g_free(devc);
-	serial_close(serial);
-err_out:
-	sr_serial_dev_inst_free(serial);
+	// serial_close(serial);
+// err_out:
+// 	sr_serial_dev_inst_free(serial);
 
 	return NULL;
 }
@@ -97,7 +111,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
 	struct sr_config *src;
 	const char *conn = NULL;
-	const char *serialcomm = TPLINK_HS_SERIALCOMM;
+	// const char *serialcomm = TPLINK_HS_SERIALCOMM;
 
 	for (GSList *l = options; l; l = l->next) {
 		src = l->data;
@@ -105,15 +119,12 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 		case SR_CONF_CONN:
 			conn = g_variant_get_string(src->data, NULL);
 			break;
-		case SR_CONF_SERIALCOMM:
-			serialcomm = g_variant_get_string(src->data, NULL);
-			break;
 		}
 	}
 	if (!conn)
 		return NULL;
 
-	return tplink_hs_scan(di, conn, serialcomm);
+	return tplink_hs_scan(di, conn);
 }
 
 static int config_set(uint32_t key, GVariant *data,
