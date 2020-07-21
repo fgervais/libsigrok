@@ -42,6 +42,7 @@
 #include "protocol.h"
 
 #define MESSAGE_PADDING_SIZE 4
+#define MESSAGE_SIZE_OFFSET 3
 
 #define SERIAL_WRITE_TIMEOUT_MS 1
 
@@ -257,21 +258,28 @@ static int tplink_hs_tcp_send_cmd(struct dev_context *devc,
 	va_list args, args_copy;
 	char *buf;
 
+	sr_spew("FG: format: '%s'.", format);
+
 	va_start(args, format);
 	va_copy(args_copy, args);
 	len = vsnprintf(NULL, 0, format, args_copy);
 	va_end(args_copy);
 
-	buf = g_malloc0(len + 2 + MESSAGE_PADDING_SIZE);
+	sr_spew("FG: format: '%s'.", format);
+	sr_spew("FG: len: '%d'.", len);
+
+	buf = g_malloc0(len + 1 + MESSAGE_PADDING_SIZE);
 	vsprintf(buf + MESSAGE_PADDING_SIZE, format, args);
 	va_end(args);
 
-	if (buf[len - 1] != '\n')
-		buf[len] = '\n';
+	sr_spew("FG: Unencrypted command: '%s'.", buf + MESSAGE_PADDING_SIZE);
 
-	tplink_hs_tcp_encrypt(buf + MESSAGE_PADDING_SIZE,
-		              strlen(buf) - MESSAGE_PADDING_SIZE);
-	out = send(devc->socket, buf, strlen(buf), 0);
+	// if (buf[len - 1] != '\n')
+	// 	buf[len] = '\n';
+
+	tplink_hs_tcp_encrypt(buf + MESSAGE_PADDING_SIZE, len);
+	buf[MESSAGE_SIZE_OFFSET] = len;
+	out = send(devc->socket, buf, len + MESSAGE_PADDING_SIZE, 0);
 
 	if (out < 0) {
 		sr_err("Send error: %s", g_strerror(errno));
@@ -279,12 +287,12 @@ static int tplink_hs_tcp_send_cmd(struct dev_context *devc,
 		return SR_ERR;
 	}
 
-	if (out < (int)strlen(buf)) {
+	if (out < len + MESSAGE_PADDING_SIZE) {
 		sr_dbg("Only sent %d/%zu bytes of command: '%s'.", out,
 		       strlen(buf), buf);
 	}
 
-	sr_spew("Sent command: '%s'.", buf);
+	sr_spew("Sent command: '%s'.", buf + MESSAGE_PADDING_SIZE);
 
 	g_free(buf);
 
@@ -298,17 +306,21 @@ static int tplink_hs_tcp_read_data(struct dev_context *devc, char *buf,
 
 	len = recv(devc->socket, buf, maxlen, 0);
 
+	sr_spew("FG: len: '%d'.", len);
+
 	if (len < 0) {
 		sr_err("Receive error: %s", g_strerror(errno));
 		return SR_ERR;
 	}
 
-	if ((len - MESSAGE_PADDING_SIZE) > 0)
+	if ((len - MESSAGE_PADDING_SIZE) < 0)
 		return 0;
 
 	len -= MESSAGE_PADDING_SIZE;
 	memmove(buf, buf + MESSAGE_PADDING_SIZE, len);
 	tplink_hs_tcp_decrypt(buf, len);
+
+	sr_spew("FG: data received: '%s'.", buf);
 
 	return len;
 }
@@ -365,9 +377,10 @@ static int tplink_hs_tcp_detect(struct dev_context *devc)
 	char *resp = NULL;
 	int ret;
 	char *cmd = "{\"system\":{\"get_sysinfo\":{}}}";
+	// char *cmd = "{\"emeter\":{\"get_realtime\":{}}}";
 
 	ret = tplink_hs_tcp_get_string(devc, cmd, &resp);
-	printf(resp);
+	sr_spew("FG: tplink_hs_tcp_get_string(): '%s'.", resp);
 
 
 	if (ret == SR_OK && !g_ascii_strncasecmp(resp, "BeagleLogic", 11))
