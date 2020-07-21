@@ -41,6 +41,8 @@
 
 #include "protocol.h"
 
+#define MESSAGE_PADDING_SIZE 4
+
 #define SERIAL_WRITE_TIMEOUT_MS 1
 
 #define TC_POLL_LEN 192
@@ -129,7 +131,76 @@ static int process_poll_pkt(struct dev_context  *devc, uint8_t *dst)
 	return SR_OK;
 }
 
-static int plink_hs_tcp_open(struct dev_context *devc)
+static int tplink_hs_tcp_encrypt(char *msg, int len)
+{
+	int i;
+	char key = 171;
+
+	for (i = 0; i < len; i++)
+	{
+		key ^= msg[i];
+		msg[i] = key;
+	}
+
+	return SR_OK;
+}
+
+static int tplink_hs_tcp_decrypt(char *msg, int len)
+{
+	int i;
+	char key = 171;
+	char temp;
+
+	for (i = 0; i < len; i++)
+	{
+		temp = key ^ msg[i];
+		key = msg[i];
+		msg[i] = temp;
+	}
+
+	return SR_OK;
+}
+
+// static char *tplink_hs_tcp_encrypt(char *msg)
+// {
+// 	int padding = 4;
+// 	int outputLen;
+// 	char *output;
+// 	char key = 171;
+
+// 	outputLen = strlen(msg) + padding + 1
+// 	output = g_malloc0(outputLen)
+
+// 	output[3] = (char) strlen(msg) * (padding > 0);
+
+// 	for (int i = 0; i < strlen(msg); i++)
+// 	{
+// 		char temp = key ^ (char)msg[i];
+// 		key = temp;
+// 		output[i + padding] = temp;
+// 	}
+
+// 	return output;
+// }
+
+// static char *tplink_hs_tcp_decrypt(char *msg, int len)
+// {
+// 	int padding = 4;
+// 	char *output = (char *)g_malloc0(len);
+// 	char key = 171;
+
+// 	for (int i = padding; i < len; i++)
+// 	{
+// 		char temp = key ^ (char)msg[i];
+// 		key = msg[i];
+// 		output[i - padding] = temp;
+// 	}
+// 	output[strlen(output) - 1] = '\0';
+
+// 	return output;
+// }
+
+static int tplink_hs_tcp_open(struct dev_context *devc)
 {
 	struct addrinfo hints;
 	struct addrinfo *results, *res;
@@ -191,13 +262,15 @@ static int tplink_hs_tcp_send_cmd(struct dev_context *devc,
 	len = vsnprintf(NULL, 0, format, args_copy);
 	va_end(args_copy);
 
-	buf = g_malloc0(len + 2);
-	vsprintf(buf, format, args);
+	buf = g_malloc0(len + 2 + MESSAGE_PADDING_SIZE);
+	vsprintf(buf + MESSAGE_PADDING_SIZE, format, args);
 	va_end(args);
 
 	if (buf[len - 1] != '\n')
 		buf[len] = '\n';
 
+	tplink_hs_tcp_encrypt(buf + MESSAGE_PADDING_SIZE,
+		              strlen(buf) - MESSAGE_PADDING_SIZE);
 	out = send(devc->socket, buf, strlen(buf), 0);
 
 	if (out < 0) {
@@ -229,6 +302,13 @@ static int tplink_hs_tcp_read_data(struct dev_context *devc, char *buf,
 		sr_err("Receive error: %s", g_strerror(errno));
 		return SR_ERR;
 	}
+
+	if ((len - MESSAGE_PADDING_SIZE) > 0)
+		return 0;
+
+	len -= MESSAGE_PADDING_SIZE;
+	memmove(buf, buf + MESSAGE_PADDING_SIZE, len);
+	tplink_hs_tcp_decrypt(buf, len);
 
 	return len;
 }
@@ -284,8 +364,9 @@ static int tplink_hs_tcp_detect(struct dev_context *devc)
 {
 	char *resp = NULL;
 	int ret;
+	char *cmd = "{\"system\":{\"get_sysinfo\":{}}}";
 
-	ret = tplink_hs_tcp_get_string(devc, "{\"system\":{\"get_sysinfo\":{}}}", &resp);
+	ret = tplink_hs_tcp_get_string(devc, cmd, &resp);
 	printf(resp);
 
 
@@ -301,8 +382,8 @@ static int tplink_hs_tcp_detect(struct dev_context *devc)
 
 SR_PRIV int tplink_hs_probe(struct dev_context  *devc)
 {
-	int len;
-	uint8_t poll_pkt[TC_POLL_LEN];
+	// int len;
+	// uint8_t poll_pkt[TC_POLL_LEN];
 
 	if (tplink_hs_tcp_open(devc) != SR_OK)
 		return SR_ERR;
@@ -333,7 +414,7 @@ SR_PRIV int tplink_hs_probe(struct dev_context  *devc)
 	// 	return SR_ERR;
 	// }
 
-	// devc->channels = tplink_hs_channels;
+	devc->channels = tplink_hs_channels;
 	// devc->dev_info.model_name = g_strndup((const char *)poll_pkt + OFF_MODEL, LEN_MODEL);
 	// devc->dev_info.fw_ver = g_strndup((const char *)poll_pkt + OFF_FW_VER, LEN_FW_VER);
 	// devc->dev_info.serial_num = RL32(poll_pkt + OFF_SERIAL);
