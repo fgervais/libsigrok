@@ -1,7 +1,7 @@
 /*
  * This file is part of the libsigrok project.
  *
- * Copyright (C) 2020 Andreas Sandberg <andreas@sandberg.pp.se>
+ * Copyright (C) 2020 Francois Gervais <francoisgervais@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,17 +74,17 @@ static GSList *tplink_hs_scan(struct sr_dev_driver *di, const char *conn)
 	g_strfreev(params);
 
 	if (tplink_hs_probe(devc) != SR_OK) {
-		sr_err("Failed to find a supported RDTech TC device.");
-		goto err_out_serial;
+		sr_err("Failed to find a supported TP-Link HS device.");
+		goto err;
 	}
 
 	sdi = g_malloc0(sizeof(struct sr_dev_inst));
 	sdi->status = SR_ST_INACTIVE;
-	sdi->vendor = g_strdup("RDTech");
+	sdi->vendor = g_strdup("TP-Link");
 	sdi->model = g_strdup(devc->dev_info.model);
 	sdi->version = g_strdup(devc->dev_info.sw_ver);
-	sdi->serial_num = devc->dev_info.deviceID;
-	sdi->inst_type = SR_INST_SERIAL;
+	sdi->serial_num = g_strdup(devc->dev_info.device_id);
+	// sdi->inst_type = SR_INST_SERIAL;
 	// sdi->conn = serial;
 	sdi->priv = devc;
 
@@ -98,7 +98,7 @@ static GSList *tplink_hs_scan(struct sr_dev_driver *di, const char *conn)
 
 	return std_scan_complete(di, devices);
 
-err_out_serial:
+err:
 	g_free(devc);
 	// serial_close(serial);
 // err_out:

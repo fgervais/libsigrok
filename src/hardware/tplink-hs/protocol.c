@@ -1,7 +1,7 @@
 /*
  * This file is part of the libsigrok project.
  *
- * Copyright (C) 2020 Andreas Sandberg <andreas@sandberg.pp.se>
+ * Copyright (C) 2020 Francois Gervais <francoisgervais@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,6 +15,14 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/*
+ * Done with help of the following sources:
+ *
+ * https://github.com/python-kasa/python-kasa
+ * https://github.com/JustinZhou300/TP-Link-HS110-C
+ * https://www.softscheck.com/en/reverse-engineering-tp-link-hs110/
  */
 
 #include <config.h>
@@ -34,8 +42,8 @@
 #endif
 #include <errno.h>
 #include <stdlib.h>
-#include <math.h>
-#include <nettle/aes.h>
+// #include <math.h>
+// #include <nettle/aes.h>
 // #include <libsigrok/libsigrok.h>
 // #include "libsigrok-internal.h"
 
@@ -43,6 +51,27 @@
 
 #define MESSAGE_PADDING_SIZE 4
 #define MESSAGE_SIZE_OFFSET 3
+
+// struct command {
+// 	char *name;
+// 	char *msg;
+// };
+
+// static const struct command commands = {
+// 	"sysinfo"  , "{\"system\":{\"get_sysinfo\":{}}}",
+//         "realtime" , "{\"emeter\":{\"get_realtime\":{}}}",
+// };
+
+#define CMD_SYSINFO_MSG "{\"system\":{\"get_sysinfo\":{}}}"
+#define CMD_REALTIME_MSG "{\"emeter\":{\"get_realtime\":{}}}"
+
+struct sysinfo {
+	char *model;
+	char *sw_ver;
+	char *deviceId;
+};
+
+
 
 #define SERIAL_WRITE_TIMEOUT_MS 1
 
@@ -74,63 +103,59 @@ static const char POLL_CMD[] = "getva";
 
 #define OFF_SERIAL 12
 
-static const uint8_t AES_KEY[] = {
-	0x58, 0x21, 0xfa, 0x56, 0x01, 0xb2, 0xf0, 0x26,
-	0x87, 0xff, 0x12, 0x04, 0x62, 0x2a, 0x4f, 0xb0,
-	0x86, 0xf4, 0x02, 0x60, 0x81, 0x6f, 0x9a, 0x0b,
-	0xa7, 0xf1, 0x06, 0x61, 0x9a, 0xb8, 0x72, 0x88,
-};
+// static const uint8_t AES_KEY[] = {
+// 	0x58, 0x21, 0xfa, 0x56, 0x01, 0xb2, 0xf0, 0x26,
+// 	0x87, 0xff, 0x12, 0x04, 0x62, 0x2a, 0x4f, 0xb0,
+// 	0x86, 0xf4, 0x02, 0x60, 0x81, 0x6f, 0x9a, 0x0b,
+// 	0xa7, 0xf1, 0x06, 0x61, 0x9a, 0xb8, 0x72, 0x88,
+// };
 
 static const struct binary_analog_channel tplink_hs_channels[] = {
-	{ "V",  {   0 + 48, BVT_LE_UINT32, 1e-4, }, 4, SR_MQ_VOLTAGE, SR_UNIT_VOLT },
-	{ "I",  {   0 + 52, BVT_LE_UINT32, 1e-5, }, 5, SR_MQ_CURRENT, SR_UNIT_AMPERE },
-	{ "D+", {  64 + 32, BVT_LE_UINT32, 1e-2, }, 2, SR_MQ_VOLTAGE, SR_UNIT_VOLT },
-	{ "D-", {  64 + 36, BVT_LE_UINT32, 1e-2, }, 2, SR_MQ_VOLTAGE, SR_UNIT_VOLT },
-	{ "E0", {  64 + 12, BVT_LE_UINT32, 1e-3, }, 3, SR_MQ_ENERGY, SR_UNIT_WATT_HOUR },
-	{ "E1", {  64 + 20, BVT_LE_UINT32, 1e-3, }, 3, SR_MQ_ENERGY, SR_UNIT_WATT_HOUR },
+	{ "I",  {   0 + 36, BVT_LE_UINT32, 1e-6, }, 6, SR_MQ_CURRENT, SR_UNIT_AMPERE },
+	{ "V",  {   0 + 55, BVT_LE_UINT32, 1e-6, }, 6, SR_MQ_VOLTAGE, SR_UNIT_VOLT },
 	{ NULL, },
 };
 
-static int check_pac_crc(uint8_t *data)
-{
-	uint16_t crc;
-	uint32_t crc_field;
+// static int check_pac_crc(uint8_t *data)
+// {
+// 	uint16_t crc;
+// 	uint32_t crc_field;
 
-	crc = sr_crc16(SR_CRC16_DEFAULT_INIT, data, PAC_DATA_LEN);
-	crc_field = RL32(data + PAC_DATA_LEN);
+// 	crc = sr_crc16(SR_CRC16_DEFAULT_INIT, data, PAC_DATA_LEN);
+// 	crc_field = RL32(data + PAC_DATA_LEN);
 
-	if (crc != crc_field) {
-		sr_spew("CRC error. Calculated: %0x" PRIx16 ", expected: %0x" PRIx32,
-			crc, crc_field);
-		return 0;
-	} else {
-		return 1;
-	}
-}
+// 	if (crc != crc_field) {
+// 		sr_spew("CRC error. Calculated: %0x" PRIx16 ", expected: %0x" PRIx32,
+// 			crc, crc_field);
+// 		return 0;
+// 	} else {
+// 		return 1;
+// 	}
+// }
 
-static int process_poll_pkt(struct dev_context  *devc, uint8_t *dst)
-{
-	struct aes256_ctx ctx;
+// static int process_poll_pkt(struct dev_context  *devc, uint8_t *dst)
+// {
+// 	struct aes256_ctx ctx;
 
-	aes256_set_decrypt_key(&ctx, AES_KEY);
-	aes256_decrypt(&ctx, TC_POLL_LEN, dst, devc->buf);
+// 	aes256_set_decrypt_key(&ctx, AES_KEY);
+// 	aes256_decrypt(&ctx, TC_POLL_LEN, dst, devc->buf);
 
-	if (RL32(dst + OFF_PAC1) != MAGIC_PAC1 ||
-	    RL32(dst + OFF_PAC2) != MAGIC_PAC2 ||
-	    RL32(dst + OFF_PAC3) != MAGIC_PAC3) {
-		sr_err("Invalid poll packet magic values!");
-		return SR_ERR;
-	}
+// 	if (RL32(dst + OFF_PAC1) != MAGIC_PAC1 ||
+// 	    RL32(dst + OFF_PAC2) != MAGIC_PAC2 ||
+// 	    RL32(dst + OFF_PAC3) != MAGIC_PAC3) {
+// 		sr_err("Invalid poll packet magic values!");
+// 		return SR_ERR;
+// 	}
 
-	if (!check_pac_crc(dst + OFF_PAC1) ||
-	    !check_pac_crc(dst + OFF_PAC2) ||
-	    !check_pac_crc(dst + OFF_PAC3)) {
-		sr_err("Invalid poll checksum!");
-		return SR_ERR;
-	}
+// 	if (!check_pac_crc(dst + OFF_PAC1) ||
+// 	    !check_pac_crc(dst + OFF_PAC2) ||
+// 	    !check_pac_crc(dst + OFF_PAC3)) {
+// 		sr_err("Invalid poll checksum!");
+// 		return SR_ERR;
+// 	}
 
-	return SR_OK;
-}
+// 	return SR_OK;
+// }
 
 static int tplink_hs_tcp_encrypt(char *msg, int len)
 {
@@ -252,25 +277,15 @@ static int tplink_hs_tcp_close(struct dev_context *devc)
 }
 
 static int tplink_hs_tcp_send_cmd(struct dev_context *devc,
-				    const char *format, ...)
+				    const char *msg)
 {
 	int len, out;
-	va_list args, args_copy;
 	char *buf;
 
-	sr_spew("FG: format: '%s'.", format);
+	len = strlen(msg);
 
-	va_start(args, format);
-	va_copy(args_copy, args);
-	len = vsnprintf(NULL, 0, format, args_copy);
-	va_end(args_copy);
-
-	sr_spew("FG: format: '%s'.", format);
-	sr_spew("FG: len: '%d'.", len);
-
-	buf = g_malloc0(len + 1 + MESSAGE_PADDING_SIZE);
-	vsprintf(buf + MESSAGE_PADDING_SIZE, format, args);
-	va_end(args);
+	buf = g_malloc0(len + MESSAGE_PADDING_SIZE);
+	memcpy(buf + MESSAGE_PADDING_SIZE, msg, len);
 
 	sr_spew("FG: Unencrypted command: '%s'.", buf + MESSAGE_PADDING_SIZE);
 
@@ -325,7 +340,7 @@ static int tplink_hs_tcp_read_data(struct dev_context *devc, char *buf,
 	return len;
 }
 
-static int tplink_hs_tcp_get_string(struct dev_context *devc, const char *cmd,
+static int tplink_hs_tcp_get_json(struct dev_context *devc, const char *cmd,
 				      char **tcp_resp)
 {
 	GString *response = g_string_sized_new(1024);
@@ -372,42 +387,113 @@ static int tplink_hs_tcp_get_string(struct dev_context *devc, const char *cmd,
 	return SR_OK;
 }
 
-static int tplink_hs_tcp_detect(struct dev_context *devc)
+static int tplink_hs_get_node_value(char *string, char *node_name,
+				      char **value)
 {
-	char *resp = NULL;
-	int ret;
-	char *cmd = "{\"system\":{\"get_sysinfo\":{}}}";
-	// char *cmd = "{\"emeter\":{\"get_realtime\":{}}}";
+	char *node_start;
+	char *value_start;
+	char *value_end;
 
-	ret = tplink_hs_tcp_get_string(devc, cmd, &resp);
-	sr_spew("FG: tplink_hs_tcp_get_string(): '%s'.", resp);
+	*value = NULL;
 
+	node_start = strstr(string, node_name);
+	if (node_start == NULL)
+		return SR_ERR;
 
-	if (ret == SR_OK && !g_ascii_strncasecmp(resp, "BeagleLogic", 11))
-		ret = SR_OK;
-	else
-		ret = SR_ERR;
+	value_start = node_start + strlen(node_name) + 3;
 
-	g_free(resp);
+	if (*value_start == '\"')
+		value_start += 1;
 
-	return ret;
+	value_end = strstr(value_start, ",");
+	if (value_end == NULL)
+		return SR_ERR;
+
+	if (*(value_end - 1) == '\"')
+		value_end -= 1;
+
+	*value = g_strndup(value_start, value_end - value_start);
+
+	return SR_OK;
 }
+
+// static int tplink_hs_tcp_get_sysinfo(struct dev_context *devc,
+// 				      struct sysinfo **resp)
+// {
+// 	char *response = g_malloc0(1024);
+// 	int len;
+// 	gint64 timeout;
+
+// 	*resp = NULL;
+// 	if (tplink_hs_tcp_send_cmd(devc, CMD_SYSINFO_MSG) != SR_OK)
+// 		return SR_ERR;
+
+// 	timeout = g_get_monotonic_time() + devc->read_timeout;
+// 	len = tplink_hs_tcp_read_data(devc, response, 1024);
+
+// 	if (len < 0) {
+// 		g_free(response);
+// 		return SR_ERR;
+// 	}
+
+// 	if (g_get_monotonic_time() > timeout) {
+// 		sr_err("Timed out waiting for response.");
+// 		g_free(response);
+// 		return SR_ERR_TIMEOUT;
+// 	}
+
+// 	sr_spew("Got response: '%.70s', length %d.",
+// 		response, len);
+
+// 	*resp = g_malloc0(sizeof(struct sysinfo));
+// 	if (strstr(response, "HS110") != NULL)
+// 		(*resp)->model = "HS110";
+
+// 	return SR_OK;
+// }
+
+// static int tplink_hs_tcp_detect(struct dev_context *devc)
+// {
+// 	// struct sysinfo *resp = NULL;
+// 	char *resp = NULL;
+// 	int ret;
+
+// 	ret = tplink_hs_tcp_get_json(devc, CMD_SYSINFO_MSG, &resp);
+// 	// sr_spew("FG: tplink_hs_tcp_get_string(): '%s'.", resp->model);
+
+
+// 	if (ret == SR_OK && strstr(resp, "HS110") != NULL)
+// 		ret = SR_OK;
+// 	else
+// 		ret = SR_ERR;
+
+// 	g_free(resp);
+
+// 	return ret;
+// }
 
 SR_PRIV int tplink_hs_probe(struct dev_context  *devc)
 {
 	// int len;
 	// uint8_t poll_pkt[TC_POLL_LEN];
+	char *resp = NULL;
 
 	if (tplink_hs_tcp_open(devc) != SR_OK)
 		return SR_ERR;
-	if (tplink_hs_tcp_detect(devc) != SR_OK)
-		return SR_ERR;
-	if (tplink_hs_tcp_close(devc) != SR_OK)
-		return SR_ERR;
-	sr_info("BeagleLogic device found at %s : %s",
-		devc->address, devc->port);
+	// if (tplink_hs_tcp_detect(devc) != SR_OK)
+	// 	goto err;
 
-	return SR_OK;
+	// return SR_OK;
+
+	if (tplink_hs_tcp_get_json(devc, CMD_SYSINFO_MSG, &resp) != SR_OK)
+		goto err;
+	if (tplink_hs_tcp_close(devc) != SR_OK)
+		goto err;
+
+	if (strstr(resp, "HS110") == NULL) {
+		sr_err("Unrecognized HS device");
+		goto err;
+	}
 
 
 	// if (serial_write_blocking(serial, &POLL_CMD, sizeof(POLL_CMD) - 1,
@@ -432,7 +518,35 @@ SR_PRIV int tplink_hs_probe(struct dev_context  *devc)
 	// devc->dev_info.fw_ver = g_strndup((const char *)poll_pkt + OFF_FW_VER, LEN_FW_VER);
 	// devc->dev_info.serial_num = RL32(poll_pkt + OFF_SERIAL);
 
-	// return SR_OK;
+	if (tplink_hs_get_node_value(resp, "model",
+				       &devc->dev_info.model) != SR_OK)
+		goto err;
+	if (tplink_hs_get_node_value(resp, "sw_ver",
+				       &devc->dev_info.sw_ver) != SR_OK)
+		goto err;
+	if (tplink_hs_get_node_value(resp, "deviceId",
+				       &devc->dev_info.device_id) != SR_OK)
+		goto err;
+
+	g_free(resp);
+
+	sr_spew("FG: %s", devc->dev_info.model);
+	sr_spew("FG: %s", devc->dev_info.sw_ver);
+	sr_spew("FG: %s", devc->dev_info.device_id);
+
+	// devc->dev_info.model_name = g_strndup(strstr(resp, "model") + 7, LEN_MODEL);
+	// devc->dev_info.fw_ver = g_strndup((const char *)poll_pkt + OFF_FW_VER, LEN_FW_VER);
+	// devc->dev_info.serial_num = RL32(poll_pkt + OFF_SERIAL);
+
+	return SR_OK;
+
+err:
+	g_free(devc->dev_info.model);
+	g_free(devc->dev_info.sw_ver);
+	g_free(devc->dev_info.device_id);
+	g_free(resp);
+
+	return SR_ERR;
 }
 
 SR_PRIV int tplink_hs_poll(const struct sr_dev_inst *sdi)
@@ -464,10 +578,10 @@ static void handle_poll_data(const struct sr_dev_inst *sdi)
 		return;
 	}
 
-	if (process_poll_pkt(devc, poll_pkt) != SR_OK) {
-		sr_err("Failed to process poll packet.");
-		return;
-	}
+	// if (process_poll_pkt(devc, poll_pkt) != SR_OK) {
+	// 	sr_err("Failed to process poll packet.");
+	// 	return;
+	// }
 
 	for (ch = sdi->channels, i = 0; ch; ch = g_slist_next(ch), i++) {
 		bv_send_analog_channel(sdi, ch->data,

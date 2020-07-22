@@ -1,7 +1,7 @@
 /*
  * This file is part of the libsigrok project.
  *
- * Copyright (C) 2020 Andreas Sandberg <andreas@sandberg.pp.se>
+ * Copyright (C) 2020 Francois Gervais <francoisgervais@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 struct tplink_dev_info {
 	char *model;
 	char *sw_ver;
-	char *deviceID;
+	char *device_id;
 };
 
 struct dev_context {
