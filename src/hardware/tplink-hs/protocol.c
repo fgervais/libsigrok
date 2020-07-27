@@ -42,10 +42,6 @@
 #endif
 #include <errno.h>
 #include <stdlib.h>
-// #include <math.h>
-// #include <nettle/aes.h>
-// #include <libsigrok/libsigrok.h>
-// #include "libsigrok-internal.h"
 
 #include "protocol.h"
 #include "tplink-hs.h"
@@ -53,117 +49,16 @@
 #define MESSAGE_PADDING_SIZE 4
 #define MESSAGE_SIZE_OFFSET 3
 
-// struct command {
-// 	char *name;
-// 	char *msg;
-// };
-
-// static const struct command commands = {
-// 	"sysinfo"  , "{\"system\":{\"get_sysinfo\":{}}}",
-//         "realtime" , "{\"emeter\":{\"get_realtime\":{}}}",
-// };
-
 #define CMD_SYSINFO_MSG "{\"system\":{\"get_sysinfo\":{}}}"
 #define CMD_REALTIME_MSG "{\"emeter\":{\"get_realtime\":{}}}"
 
-// struct sysinfo {
-// 	char *model;
-// 	char *sw_ver;
-// 	char *deviceId;
-// };
-
-
-
-// #define SERIAL_WRITE_TIMEOUT_MS 1
-
-// #define TC_POLL_LEN 192
-// #define HS_POLL_PERIOD_MS 100
 #define HS_POLL_PERIOD_MS 1000
-// #define TC_TIMEOUT_MS 1000
-
-// static const char POLL_CMD[] = "getva";
-
-// #define MAGIC_PAC1 0x31636170UL
-// #define MAGIC_PAC2 0x32636170UL
-// #define MAGIC_PAC3 0x33636170UL
-
-/* Length of PAC block excluding CRC */
-// #define PAC_DATA_LEN 60
-/* Length of PAC block including CRC */
-// #define PAC_LEN 64
-
-/* Offset to PAC block from start of poll data */
-// #define OFF_PAC1 (0 * PAC_LEN)
-// #define OFF_PAC2 (1 * PAC_LEN)
-// #define OFF_PAC3 (2 * PAC_LEN)
-
-// #define OFF_MODEL 4
-// #define LEN_MODEL 4
-
-// #define OFF_FW_VER 8
-// #define LEN_FW_VER 4
-
-// #define OFF_SERIAL 12
-
-// static const uint8_t AES_KEY[] = {
-// 	0x58, 0x21, 0xfa, 0x56, 0x01, 0xb2, 0xf0, 0x26,
-// 	0x87, 0xff, 0x12, 0x04, 0x62, 0x2a, 0x4f, 0xb0,
-// 	0x86, 0xf4, 0x02, 0x60, 0x81, 0x6f, 0x9a, 0x0b,
-// 	0xa7, 0xf1, 0x06, 0x61, 0x9a, 0xb8, 0x72, 0x88,
-// };
-
-// static const struct binary_analog_channel tplink_hs_channels[] = {
-// 	{ "I",  {   0 + 36, BVT_LE_UINT32, 1e-6, }, 6, SR_MQ_CURRENT, SR_UNIT_AMPERE },
-// 	{ "V",  {   0 + 55, BVT_LE_UINT32, 1e-6, }, 6, SR_MQ_VOLTAGE, SR_UNIT_VOLT },
-// 	{ NULL, },
-// };
 
 static const struct channel_spec tplink_hs_channels[] = {
 	{ "V",  SR_CHANNEL_ANALOG, SR_MQ_VOLTAGE, SR_UNIT_VOLT },
 	{ "I",  SR_CHANNEL_ANALOG, SR_MQ_CURRENT, SR_UNIT_AMPERE },
 	{ NULL, },
 };
-
-// static int check_pac_crc(uint8_t *data)
-// {
-// 	uint16_t crc;
-// 	uint32_t crc_field;
-
-// 	crc = sr_crc16(SR_CRC16_DEFAULT_INIT, data, PAC_DATA_LEN);
-// 	crc_field = RL32(data + PAC_DATA_LEN);
-
-// 	if (crc != crc_field) {
-// 		sr_spew("CRC error. Calculated: %0x" PRIx16 ", expected: %0x" PRIx32,
-// 			crc, crc_field);
-// 		return 0;
-// 	} else {
-// 		return 1;
-// 	}
-// }
-
-// static int process_poll_pkt(struct dev_context  *devc, uint8_t *dst)
-// {
-// 	struct aes256_ctx ctx;
-
-// 	aes256_set_decrypt_key(&ctx, AES_KEY);
-// 	aes256_decrypt(&ctx, TC_POLL_LEN, dst, devc->buf);
-
-// 	if (RL32(dst + OFF_PAC1) != MAGIC_PAC1 ||
-// 	    RL32(dst + OFF_PAC2) != MAGIC_PAC2 ||
-// 	    RL32(dst + OFF_PAC3) != MAGIC_PAC3) {
-// 		sr_err("Invalid poll packet magic values!");
-// 		return SR_ERR;
-// 	}
-
-// 	if (!check_pac_crc(dst + OFF_PAC1) ||
-// 	    !check_pac_crc(dst + OFF_PAC2) ||
-// 	    !check_pac_crc(dst + OFF_PAC3)) {
-// 		sr_err("Invalid poll checksum!");
-// 		return SR_ERR;
-// 	}
-
-// 	return SR_OK;
-// }
 
 static int tplink_hs_tcp_encrypt(char *msg, int len)
 {
@@ -194,45 +89,6 @@ static int tplink_hs_tcp_decrypt(char *msg, int len)
 
 	return SR_OK;
 }
-
-// static char *tplink_hs_tcp_encrypt(char *msg)
-// {
-// 	int padding = 4;
-// 	int outputLen;
-// 	char *output;
-// 	char key = 171;
-
-// 	outputLen = strlen(msg) + padding + 1
-// 	output = g_malloc0(outputLen)
-
-// 	output[3] = (char) strlen(msg) * (padding > 0);
-
-// 	for (int i = 0; i < strlen(msg); i++)
-// 	{
-// 		char temp = key ^ (char)msg[i];
-// 		key = temp;
-// 		output[i + padding] = temp;
-// 	}
-
-// 	return output;
-// }
-
-// static char *tplink_hs_tcp_decrypt(char *msg, int len)
-// {
-// 	int padding = 4;
-// 	char *output = (char *)g_malloc0(len);
-// 	char key = 171;
-
-// 	for (int i = padding; i < len; i++)
-// 	{
-// 		char temp = key ^ (char)msg[i];
-// 		key = msg[i];
-// 		output[i - padding] = temp;
-// 	}
-// 	output[strlen(output) - 1] = '\0';
-
-// 	return output;
-// }
 
 static int tplink_hs_tcp_open(struct dev_context *devc)
 {
@@ -298,9 +154,6 @@ static int tplink_hs_tcp_send_cmd(struct dev_context *devc,
 	memcpy(buf + MESSAGE_PADDING_SIZE, msg, len);
 
 	sr_spew("FG: Unencrypted command: '%s'.", buf + MESSAGE_PADDING_SIZE);
-
-	// if (buf[len - 1] != '\n')
-	// 	buf[len] = '\n';
 
 	tplink_hs_tcp_encrypt(buf + MESSAGE_PADDING_SIZE, len);
 	buf[MESSAGE_SIZE_OFFSET] = len;
@@ -455,61 +308,6 @@ static int tplink_hs_get_node_value(char *string, char *node_name,
 	return SR_OK;
 }
 
-// static int tplink_hs_tcp_get_sysinfo(struct dev_context *devc,
-// 				      struct sysinfo **resp)
-// {
-// 	char *response = g_malloc0(1024);
-// 	int len;
-// 	gint64 timeout;
-
-// 	*resp = NULL;
-// 	if (tplink_hs_tcp_send_cmd(devc, CMD_SYSINFO_MSG) != SR_OK)
-// 		return SR_ERR;
-
-// 	timeout = g_get_monotonic_time() + devc->read_timeout;
-// 	len = tplink_hs_tcp_read_data(devc, response, 1024);
-
-// 	if (len < 0) {
-// 		g_free(response);
-// 		return SR_ERR;
-// 	}
-
-// 	if (g_get_monotonic_time() > timeout) {
-// 		sr_err("Timed out waiting for response.");
-// 		g_free(response);
-// 		return SR_ERR_TIMEOUT;
-// 	}
-
-// 	sr_spew("Got response: '%.70s', length %d.",
-// 		response, len);
-
-// 	*resp = g_malloc0(sizeof(struct sysinfo));
-// 	if (strstr(response, "HS110") != NULL)
-// 		(*resp)->model = "HS110";
-
-// 	return SR_OK;
-// }
-
-// static int tplink_hs_tcp_detect(struct dev_context *devc)
-// {
-// 	// struct sysinfo *resp = NULL;
-// 	char *resp = NULL;
-// 	int ret;
-
-// 	ret = tplink_hs_tcp_get_json(devc, CMD_SYSINFO_MSG, &resp);
-// 	// sr_spew("FG: tplink_hs_tcp_get_string(): '%s'.", resp->model);
-
-
-// 	if (ret == SR_OK && strstr(resp, "HS110") != NULL)
-// 		ret = SR_OK;
-// 	else
-// 		ret = SR_ERR;
-
-// 	g_free(resp);
-
-// 	return ret;
-// }
-
 static int tplink_hs_start(struct dev_context *devc)
 {
 	tplink_hs_tcp_drain(devc);
@@ -524,28 +322,17 @@ static int tplink_hs_start(struct dev_context *devc)
 
 static int tplink_hs_stop(struct dev_context *devc)
 {
-	sr_spew("FG: tplink_hs_stop");
-
 	tplink_hs_tcp_drain(devc);
-
-	sr_spew("FG: tplink_hs_stop - DONE");
 
 	return SR_OK;
 }
 
 SR_PRIV int tplink_hs_probe(struct dev_context  *devc)
 {
-	// int len;
-	// uint8_t poll_pkt[TC_POLL_LEN];
 	char *resp = NULL;
 
 	if (tplink_hs_tcp_open(devc) != SR_OK)
 		return SR_ERR;
-	// if (tplink_hs_tcp_detect(devc) != SR_OK)
-	// 	goto err;
-
-	// return SR_OK;
-
 	if (tplink_hs_tcp_get_json(devc, CMD_SYSINFO_MSG, &resp) != SR_OK)
 		goto err;
 	if (tplink_hs_tcp_close(devc) != SR_OK)
@@ -556,28 +343,7 @@ SR_PRIV int tplink_hs_probe(struct dev_context  *devc)
 		goto err;
 	}
 
-
-	// if (serial_write_blocking(serial, &POLL_CMD, sizeof(POLL_CMD) - 1,
- //                                  SERIAL_WRITE_TIMEOUT_MS) < 0) {
-	// 	sr_err("Unable to send probe request.");
-	// 	return SR_ERR;
-	// }
-
-	// len = serial_read_blocking(serial, devc->buf, TC_POLL_LEN, TC_TIMEOUT_MS);
-	// if (len != TC_POLL_LEN) {
-	// 	sr_err("Failed to read probe response.");
-	// 	return SR_ERR;
-	// }
-
-	// if (process_poll_pkt(devc, poll_pkt) != SR_OK) {
-	// 	sr_err("Unrecognized TC device!");
-	// 	return SR_ERR;
-	// }
-
 	devc->dev_info.channels = tplink_hs_channels;
-	// devc->dev_info.model_name = g_strndup((const char *)poll_pkt + OFF_MODEL, LEN_MODEL);
-	// devc->dev_info.fw_ver = g_strndup((const char *)poll_pkt + OFF_FW_VER, LEN_FW_VER);
-	// devc->dev_info.serial_num = RL32(poll_pkt + OFF_SERIAL);
 
 	if (tplink_hs_get_node_value(resp, "model",
 				       &devc->dev_info.model) != SR_OK)
@@ -594,12 +360,6 @@ SR_PRIV int tplink_hs_probe(struct dev_context  *devc)
 	sr_spew("Registered device: %s - %s - %s", devc->dev_info.model,
 						   devc->dev_info.sw_ver,
 						   devc->dev_info.device_id);
-	// sr_spew("FG: %s", devc->dev_info.sw_ver);
-	// sr_spew("FG: %s", devc->dev_info.device_id);
-
-	// devc->dev_info.model_name = g_strndup(strstr(resp, "model") + 7, LEN_MODEL);
-	// devc->dev_info.fw_ver = g_strndup((const char *)poll_pkt + OFF_FW_VER, LEN_FW_VER);
-	// devc->dev_info.serial_num = RL32(poll_pkt + OFF_SERIAL);
 
 	return SR_OK;
 
@@ -612,42 +372,20 @@ err:
 	return SR_ERR;
 }
 
-// SR_PRIV int tplink_hs_poll(const struct sr_dev_inst *sdi)
-// {
-// 	struct dev_context *devc = sdi->priv;
-// 	struct sr_serial_dev_inst *serial = sdi->conn;
-
-// 	if (serial_write_blocking(serial, &POLL_CMD, sizeof(POLL_CMD) - 1,
-//                                   SERIAL_WRITE_TIMEOUT_MS) < 0) {
-// 		sr_err("Unable to send poll request.");
-// 		return SR_ERR;
-// 	}
-
-// 	devc->cmd_sent_at = g_get_monotonic_time() / 1000;
-
-// 	return SR_OK;
-// }
-
 static void handle_poll_data(const struct sr_dev_inst *sdi)
 {
 	struct dev_context *devc = sdi->priv;
-	// uint8_t poll_pkt[TC_POLL_LEN];
-	// int i;
-	// GSList *ch;
 	struct sr_datafeed_packet packet;
 	struct sr_datafeed_analog analog;
 	struct sr_analog_encoding encoding;
 	struct sr_analog_meaning meaning;
 	struct sr_analog_spec spec;
-	// float data[devc->dev_info.num_channels];
-	// float data[2];
 	int i;
 
 	sr_analog_init(&analog, &encoding, &meaning, &spec, 0);
 
 	packet.type = SR_DF_ANALOG;
 	packet.payload = &analog;
-	// analog.meaning->channels = sdi->channels;
 	analog.num_samples = 1;
 
 	for (i = 0; devc->dev_info.channels[i].name; i++) {
@@ -656,7 +394,6 @@ static void handle_poll_data(const struct sr_dev_inst *sdi)
 		analog.meaning->mqflags = SR_MQFLAG_DC;
 		analog.encoding->digits = 6;
 		analog.spec->spec_digits = 6;
-		// analog.data = data;
 
 		if (devc->dev_info.channels[i].mq == SR_MQ_VOLTAGE) {
 			analog.meaning->channels =
@@ -671,24 +408,6 @@ static void handle_poll_data(const struct sr_dev_inst *sdi)
 
 		sr_session_send(sdi, &packet);
 	}
-
-
-	// sr_spew("Received poll packet (len: %d).", devc->buflen);
-	// if (devc->buflen != TC_POLL_LEN) {
-	// 	sr_err("Unexpected poll packet length: %i", devc->buflen);
-	// 	return;
-	// }
-
-	// if (process_poll_pkt(devc, poll_pkt) != SR_OK) {
-	// 	sr_err("Failed to process poll packet.");
-	// 	return;
-	// }
-
-	// for (ch = sdi->channels, i = 0; ch; ch = g_slist_next(ch), i++) {
-	// 	bv_send_analog_channel(sdi, ch->data,
-	// 			       &devc->channels[i], poll_pkt, TC_POLL_LEN);
- 	// }
-
 	sr_sw_limits_update_samples_read(&devc->limits, 1);
 }
 
@@ -699,21 +418,6 @@ static int recv_poll_data(struct sr_dev_inst *sdi)
 	char *node_current_value;
 	char *node_voltage_value;
 	int len;
-
-	// /* Serial data arrived. */
-	// while (devc->buflen < TC_POLL_LEN) {
-	// 	len = serial_read_nonblocking(serial, devc->buf + devc->buflen, 1);
-	// 	if (len < 1)
-	// 		return;
-
-	// 	devc->buflen++;
-	// }
-
-	// if (devc->buflen == TC_POLL_LEN)
-	// 	handle_poll_data(sdi);
-
-	// devc->buflen = 0;
-
 
 	len = tplink_hs_tcp_read_data(devc, response, 1024);
 
@@ -751,7 +455,6 @@ SR_PRIV int tplink_hs_receive_data(int fd, int revents, void *cb_data)
 {
 	struct sr_dev_inst *sdi;
 	struct dev_context *devc;
-	// struct sr_serial_dev_inst *serial;
 	int64_t now, elapsed;
 
 	(void)fd;
@@ -762,7 +465,6 @@ SR_PRIV int tplink_hs_receive_data(int fd, int revents, void *cb_data)
 	if (!(devc = sdi->priv))
 		return TRUE;
 
-	// serial = sdi->conn;
 	if (revents == G_IO_IN) {
 		sr_info("In callback G_IO_IN");
 		recv_poll_data(sdi);
@@ -778,14 +480,7 @@ SR_PRIV int tplink_hs_receive_data(int fd, int revents, void *cb_data)
 	elapsed = now - devc->cmd_sent_at;
 
 	if (elapsed > HS_POLL_PERIOD_MS) {
-		// tplink_hs_poll(sdi);
-		// sr_session_source_remove_pollfd(sdi->session, &devc->pollfd);
 		tplink_hs_tcp_open(devc);
-		// sdi->driver->dev_open(sdi);
-		// sr_session_source_add_pollfd(sdi->session, &devc->pollfd,
-		// 	1000, tplink_hs_receive_data,
-		// 	(void *)sdi);
-		// tplink_hs_start(devc);
 		if (tplink_hs_tcp_send_cmd(devc, CMD_REALTIME_MSG) == SR_OK)
 			devc->cmd_sent_at = g_get_monotonic_time() / 1000;
 	}
@@ -796,19 +491,6 @@ SR_PRIV int tplink_hs_receive_data(int fd, int revents, void *cb_data)
 SR_PRIV const struct tplink_hs_ops tplink_hs_dev_ops = {
 	.open = tplink_hs_tcp_open,
 	.close = tplink_hs_tcp_close,
-	// .get_buffersize = beaglelogic_get_buffersize,
-	// .set_buffersize = beaglelogic_set_buffersize,
-	// .get_samplerate = beaglelogic_get_samplerate,
-	// .set_samplerate = beaglelogic_set_samplerate,
-	// .get_sampleunit = beaglelogic_get_sampleunit,
-	// .set_sampleunit = beaglelogic_set_sampleunit,
-	// .get_triggerflags = beaglelogic_get_triggerflags,
-	// .set_triggerflags = beaglelogic_set_triggerflags,
 	.start = tplink_hs_start,
 	.stop = tplink_hs_stop,
-	// .get_lasterror = beaglelogic_get_lasterror,
-	// .get_bufunitsize = beaglelogic_get_bufunitsize,
-	// .set_bufunitsize = beaglelogic_set_bufunitsize,
-	// .mmap = dummy,
-	// .munmap = dummy,
 };
