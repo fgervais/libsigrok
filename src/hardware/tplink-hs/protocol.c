@@ -134,8 +134,6 @@ static int tplink_hs_tcp_open(struct dev_context *devc)
 
 static int tplink_hs_tcp_close(struct dev_context *devc)
 {
-	sr_spew("FG: tplink_hs_tcp_close");
-
 	if (close(devc->socket) < 0)
 		return SR_ERR;
 
@@ -153,7 +151,7 @@ static int tplink_hs_tcp_send_cmd(struct dev_context *devc,
 	buf = g_malloc0(len + MESSAGE_PADDING_SIZE);
 	memcpy(buf + MESSAGE_PADDING_SIZE, msg, len);
 
-	sr_spew("FG: Unencrypted command: '%s'.", buf + MESSAGE_PADDING_SIZE);
+	sr_spew("Unencrypted command: '%s'.", buf + MESSAGE_PADDING_SIZE);
 
 	tplink_hs_tcp_encrypt(buf + MESSAGE_PADDING_SIZE, len);
 	buf[MESSAGE_SIZE_OFFSET] = len;
@@ -184,9 +182,6 @@ static int tplink_hs_tcp_read_data(struct dev_context *devc, char *buf,
 
 	len = recv(devc->socket, buf, maxlen, 0);
 
-	if (len > 0)
-		sr_spew("FG: len: '%d'.", len);
-
 	if (len < 0) {
 		sr_err("Receive error: %s", g_strerror(errno));
 		return SR_ERR;
@@ -199,7 +194,7 @@ static int tplink_hs_tcp_read_data(struct dev_context *devc, char *buf,
 	memmove(buf, buf + MESSAGE_PADDING_SIZE, len);
 	tplink_hs_tcp_decrypt(buf, len);
 
-	sr_spew("FG: data received: '%s'.", buf);
+	sr_spew("Data received: '%s'.", buf);
 
 	return len;
 }
